@@ -1,0 +1,4 @@
+name = "ai-chat-api"
+type = "javascript"
+account_id = "7c93e1e73746fd9b2a891e33ac383503"  # Get from Cloudflare Dashboard
+workers_dev = true
