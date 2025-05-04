@@ -41,7 +41,7 @@ export default {
         }
       }
       
-      // Check if icon is a valid URL (very basic check)
+      // Check if icon is a valid URL
       if (typeof requestData.icon !== 'string' || !requestData.icon.match(/^https?:\/\/.+\/.+\.(jpg|jpeg|png|gif|webp)$/i)) {
         return new Response('Error: the \'icon\' field must be a valid image URL.', { status: 403 });
       }
@@ -88,55 +88,42 @@ export default {
         return new Response('Error: Failed to generate level card', { status: 500 });
       }
       
-      // Get the image from bgapi response (assuming it returns the image directly)
+      // Get the image blob from response
       const imageBlob = await bgapiResponse.blob();
       
       // Host the image on postimages.org
-      const hostedImageUrl = await hostImageOnPostImages(imageBlob);
+      const formData = new FormData();
+      formData.append('file', imageBlob, 'levelcard.png');
+      formData.append('token', 'free');
       
-      if (!hostedImageUrl) {
-        return new Response('Error: Failed to host image', { status: 500 });
+      const uploadResponse = await fetch('https://postimages.org/json', {
+        method: 'POST',
+        body: formData
+      });
+      
+      const uploadData = await uploadResponse.json();
+      
+      if (uploadData.status !== 'ok' || !uploadData.url) {
+        return new Response('Error: Failed to upload image to hosting service', { status: 500 });
       }
       
-      // Return the new hosted URL to the requester
+      // Get the direct image URL (replace /json with nothing)
+      const hostedUrl = uploadData.url.replace('/json', '');
+      
+      // Return the hosted URL
       return new Response(JSON.stringify({ 
-        hostedUrl: hostedImageUrl,
-        originalUrl: bgapiResponse.url 
+        image_url: hostedUrl,
+        success: true
       }), {
         headers: { 'Content-Type': 'application/json' }
       });
       
     } catch (error) {
       console.error('Error:', error);
-      return new Response('Error: Invalid request', { status: 400 });
+      return new Response(JSON.stringify({
+        error: 'Internal server error',
+        success: false
+      }), { status: 500 });
     }
   }
 };
-
-// Function to host image on postimages.org
-async function hostImageOnPostImages(imageBlob) {
-  try {
-    // Create form data
-    const formData = new FormData();
-    formData.append('file', imageBlob);
-    formData.append('token', 'free'); // postimages.org free token
-    
-    // Upload to postimages.org
-    const response = await fetch('https://postimages.org/json', {
-      method: 'POST',
-      body: formData
-    });
-    
-    const data = await response.json();
-    
-    if (data.status === 'ok') {
-      // Return the direct image URL
-      return data.url.replace('/json', '');
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('Image hosting error:', error);
-    return null;
-  }
-}
