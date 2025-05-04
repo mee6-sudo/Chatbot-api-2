@@ -1,125 +1,142 @@
-// index.js
 export default {
-  async fetch(request) {
-    // Only allow POST requests
+  async fetch(request, env, ctx) {
+    // Handle different HTTP methods
     if (request.method !== 'POST') {
-      return new Response(JSON.stringify({ error: 'Only POST requests allowed' }), {
-        status: 405,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      switch (request.method) {
+        case 'GET':
+          return new Response('GET my ass', { status: 403 });
+        case 'PATCH':
+          return new Response('Go PATCH that hole', { status: 403 });
+        case 'DELETE':
+          return new Response('DELETE my foot', { status: 403 });
+        default:
+          return new Response('Method not allowed', { status: 405 });
+      }
+    }
+
+    // Check Content-Type header
+    const contentType = request.headers.get('Content-Type');
+    if (!contentType || !contentType.includes('application/json')) {
+      return new Response('Error: header \'Content-Type -- application/json\' not Found', { status: 404 });
     }
 
     try {
-      const data = await request.json();
+      const requestData = await request.json();
       
-      // Validate required fields
-      const requiredFields = ['rank_text', 'rank', 'avatar', 'user_name', 'max_xp', 'xp'];
+      // Required fields
+      const requiredFields = ['name', 'level', 'xp', 'xp_required', 'rank', 'icon'];
+      
+      // Check for missing fields
       for (const field of requiredFields) {
-        if (!data[field]) {
-          return new Response(JSON.stringify({ error: `Missing required field: ${field}` }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' }
-          });
+        if (!(field in requestData)) {
+          return new Response(`Error: the '${field}' field is missing.`, { status: 403 });
         }
       }
-
-      // Validate numeric fields
-      if (isNaN(data.rank) || isNaN(data.max_xp) || isNaN(data.xp)) {
-        return new Response(JSON.stringify({ error: 'Rank, max_xp, and xp must be numbers' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
+      
+      // Check for invalid number fields
+      const numberFields = ['level', 'xp', 'xp_required', 'rank'];
+      for (const field of numberFields) {
+        if (typeof requestData[field] !== 'number') {
+          return new Response(`Error: the '${field}' field must be a number.`, { status: 403 });
+        }
       }
-
-      // Validate XP values
-      const xp = Number(data.xp);
-      const maxXp = Number(data.max_xp);
-      if (xp > maxXp) {
-        return new Response(JSON.stringify({ error: 'xp cannot be greater than max_xp' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
+      
+      // Check if icon is a valid URL (very basic check)
+      if (typeof requestData.icon !== 'string' || !requestData.icon.match(/^https?:\/\/.+\/.+\.(jpg|jpeg|png|gif|webp)$/i)) {
+        return new Response('Error: the \'icon\' field must be a valid image URL.', { status: 403 });
       }
-
-      // Set defaults
-      const avatarBorder = data.avatar_border || '#FFFFFF';
-      const barPlaceholder = data.bar_placeholder ? `${data.bar_placeholder}80` : '#80808080';
-      const barColor = data.bar || '#FFFFFF';
-
-      // Calculate percentage
-      const percentage = ((xp / maxXp) * 100).toFixed(2);
-
-      // Generate SVG with glow effects
-      const svg = `
-<svg width="900" height="300" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <!-- Glowy background -->
-    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="5" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-    </filter>
-    
-    <!-- Gradient background -->
-    <radialGradient id="bg" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-      <stop offset="0%" stop-color="#000000"/>
-      <stop offset="100%" stop-color="#1a1a1a"/>
-    </radialGradient>
-    
-    <!-- Avatar clip path -->
-    <clipPath id="avatarClip">
-      <circle cx="150" cy="150" r="90"/>
-    </clipPath>
-  </defs>
-  
-  <!-- Background -->
-  <rect width="100%" height="100%" fill="url(#bg)" filter="url(#glow)"/>
-  
-  <!-- Avatar with glowing border -->
-  <circle cx="150" cy="150" r="95" fill="${avatarBorder}" filter="url(#glow)" opacity="0.8"/>
-  <image href="${data.avatar}" x="60" y="60" width="180" height="180" 
-         clip-path="url(#avatarClip)" onerror="this.remove()"/>
-  
-  <!-- User Info -->
-  <text x="300" y="130" font-family="Arial" font-size="42" font-weight="bold" fill="white" filter="url(#glow)">
-    ${data.user_name}
-  </text>
-  
-  <!-- Rank -->
-  <text x="750" y="80" font-family="Arial" font-size="28" text-anchor="end" fill="white" filter="url(#glow)">
-    ${data.rank_text} #${data.rank}
-  </text>
-  
-  <!-- XP Text -->
-  <text x="750" y="120" font-family="Arial" font-size="24" text-anchor="end" fill="white" filter="url(#glow)">
-    ${xp}/${maxXp} XP
-  </text>
-  
-  <!-- Percentage -->
-  <text x="300" y="180" font-family="Arial" font-size="24" fill="white" filter="url(#glow)">
-    ${percentage}%
-  </text>
-  
-  <!-- Progress Bar -->
-  <rect x="300" y="200" width="400" height="20" rx="10" fill="${barPlaceholder}" filter="url(#glow)"/>
-  <rect x="300" y="200" width="${400 * (xp/maxXp)}" height="20" rx="10" fill="${barColor}" filter="url(#glow)"/>
-</svg>`;
-
-      // Return the SVG image
-      return new Response(svg, {
+      
+      // Check for extra fields
+      const allowedFields = [...requiredFields];
+      for (const field in requestData) {
+        if (!allowedFields.includes(field)) {
+          return new Response(`Error: '${field}' is not a valid field.`, { status: 404 });
+        }
+      }
+      
+      // Prepare data for bgapi
+      const bgapiData = {
+        circleColor: '#FFFFFF',
+        emptyBarColor: '#333333',
+        filledBarColor: '#FFFFFF',
+        userColor: '#FFFFFF',
+        userName: requestData.name,
+        rankColor: '#FFFFFF',
+        levelColor: '#FFFFFF',
+        level: requestData.level,
+        currentXp: requestData.xp,
+        nextLevelXp: requestData.xp_required,
+        rank: requestData.rank,
+        rankName: 'Rank',
+        xpPercentColor: '#FFFFFF',
+        xpNumberColor: '#FFFFFF',
+        avatar: requestData.icon,
+        bg_color: '#FFFFFF'
+      };
+      
+      // Make request to bgapi
+      const bgapiResponse = await fetch('https://dashboard.botghost.com/api/public/levels_card', {
+        method: 'POST',
         headers: {
-          'Content-Type': 'image/svg+xml',
-          'Cache-Control': 'public, max-age=86400' // 24 hours cache
-        }
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(bgapiData)
       });
-
-    } catch (error) {
+      
+      // Check if bgapi response is successful
+      if (!bgapiResponse.ok) {
+        return new Response('Error: Failed to generate level card', { status: 500 });
+      }
+      
+      // Get the image from bgapi response (assuming it returns the image directly)
+      const imageBlob = await bgapiResponse.blob();
+      
+      // Host the image on postimages.org
+      const hostedImageUrl = await hostImageOnPostImages(imageBlob);
+      
+      if (!hostedImageUrl) {
+        return new Response('Error: Failed to host image', { status: 500 });
+      }
+      
+      // Return the new hosted URL to the requester
       return new Response(JSON.stringify({ 
-        error: 'Image generation failed', 
-        details: error.message 
+        hostedUrl: hostedImageUrl,
+        originalUrl: bgapiResponse.url 
       }), {
-        status: 500,
         headers: { 'Content-Type': 'application/json' }
       });
+      
+    } catch (error) {
+      console.error('Error:', error);
+      return new Response('Error: Invalid request', { status: 400 });
     }
   }
 };
+
+// Function to host image on postimages.org
+async function hostImageOnPostImages(imageBlob) {
+  try {
+    // Create form data
+    const formData = new FormData();
+    formData.append('file', imageBlob);
+    formData.append('token', 'free'); // postimages.org free token
+    
+    // Upload to postimages.org
+    const response = await fetch('https://postimages.org/json', {
+      method: 'POST',
+      body: formData
+    });
+    
+    const data = await response.json();
+    
+    if (data.status === 'ok') {
+      // Return the direct image URL
+      return data.url.replace('/json', '');
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Image hosting error:', error);
+    return null;
+  }
+}
