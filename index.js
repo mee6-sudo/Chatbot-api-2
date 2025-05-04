@@ -41,66 +41,111 @@ export default {
 
       // Set defaults
       const avatarBorder = data.avatar_border || '#FFFFFF';
-      const barPlaceholder = data.bar_placeholder ? `${data.bar_placeholder}80` : '#80808080';
+      const barPlaceholder = data.bar_placeholder || '#808080';
       const barColor = data.bar || '#FFFFFF';
 
       // Calculate percentage
       const percentage = ((data.xp / data.max_xp) * 100).toFixed(2);
 
-      // Generate SVG image directly (no external API needed)
-      const svg = `
-<svg width="900" height="300" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#1a1a2e"/>
-      <stop offset="100%" stop-color="#16213e"/>
-    </linearGradient>
-  </defs>
-  
-  <!-- Background -->
-  <rect width="100%" height="100%" fill="url(#bg)"/>
-  
-  <!-- Avatar -->
-  <defs>
-    <clipPath id="avatarClip">
-      <circle cx="230" cy="150" r="90"/>
-    </clipPath>
-  </defs>
-  <image href="${data.avatar}" x="140" y="60" width="180" height="180" 
-         clip-path="url(#avatarClip)" onerror="this.remove()"/>
-  <circle cx="230" cy="150" r="90" fill="none" stroke="${avatarBorder}" stroke-width="5"/>
-  
-  <!-- User Info -->
-  <text x="350" y="120" font-family="Arial" font-weight="bold" font-size="42" fill="white">
-    ${data.user_name}
-  </text>
-  <text x="350" y="160" font-family="Arial" font-size="28" fill="white" fill-opacity="0.8">
-    ${data.rank_text} #${data.rank}
-  </text>
-  
-  <!-- XP Bar -->
-  <text x="350" y="200" font-family="Arial" font-size="24" fill="white">
-    ${data.xp}/${data.max_xp} XP
-  </text>
-  <text x="750" y="200" font-family="Arial" font-size="24" fill="white" text-anchor="end">
-    ${percentage}%
-  </text>
-  
-  <rect x="350" y="210" width="400" height="20" rx="10" fill="${barPlaceholder}"/>
-  <rect x="350" y="210" width="${400 * (data.xp/data.max_xp)}" height="20" rx="10" fill="${barColor}"/>
-</svg>`;
+      // Generate HTML that browsers will render as an image
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      width: 900px;
+      height: 300px;
+      background: linear-gradient(to bottom, #1a1a2e, #16213e);
+      display: flex;
+      align-items: center;
+      font-family: 'Roboto', sans-serif;
+      color: white;
+    }
+    .avatar-container {
+      margin-left: 50px;
+      position: relative;
+    }
+    .avatar {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      border: 5px solid ${avatarBorder};
+      object-fit: cover;
+    }
+    .user-info {
+      margin-left: 40px;
+      width: 600px;
+    }
+    .username {
+      font-size: 42px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    .rank {
+      font-size: 28px;
+      margin-bottom: 30px;
+      opacity: 0.8;
+    }
+    .xp-container {
+      margin-bottom: 20px;
+    }
+    .xp-text {
+      font-size: 24px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .progress-bar {
+      height: 20px;
+      width: 100%;
+      background-color: ${barPlaceholder};
+      border-radius: 10px;
+      overflow: hidden;
+      opacity: 0.5;
+    }
+    .progress {
+      height: 100%;
+      width: ${percentage}%;
+      background-color: ${barColor};
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="avatar-container">
+    <img class="avatar" src="${data.avatar}" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+  </div>
+  <div class="user-info">
+    <div class="username">${data.user_name}</div>
+    <div class="rank">${data.rank_text} #${data.rank}</div>
+    <div class="xp-container">
+      <div class="xp-text">
+        <span>${data.xp}/${data.max_xp} XP</span>
+        <span>${percentage}%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress"></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
 
-      // Return as SVG (browsers can display directly)
-      return new Response(svg, {
+      // Return the HTML directly - modern browsers will render it as an image
+      return new Response(html, {
         headers: {
-          'Content-Type': 'image/svg+xml',
+          'Content-Type': 'text/html',
           'Cache-Control': 'public, max-age=86400'
         }
       });
 
     } catch (error) {
       return new Response(JSON.stringify({ 
-        error: 'Image generation failed',
+        error: 'Request processing failed',
         details: error.message 
       }), {
         status: 500,
