@@ -1,239 +1,142 @@
-// Cloudflare Worker self-contained AI chat API
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request))
-})
-
-// In-memory knowledge base (simple example)
-const KNOWLEDGE_BASE = {
-  "general": {
-    "greetings": ["Hello!", "Hi there!", "Greetings!"],
-    "farewells": ["Goodbye!", "See you later!", "Farewell!"],
-    "help": ["How can I assist you today?", "What can I help you with?", "I'm here to help!"]
-  },
-  "facts": {
-    "meaning of life": "42",
-    "capital of france": "Paris",
-    "speed of light": "299,792 kilometers per second"
-  }
-}
-
-// Personality templates
-const PERSONALITIES = {
-  "friendly": {
-    responses: {
-      default: "I'd be happy to help with that!",
-      unknown: "I'm not sure about that, but I'm eager to learn!"
-    },
-    modifiers: ["😊", "✨", "👍"]
-  },
-  "professional": {
-    responses: {
-      default: "Certainly, here's the information you requested:",
-      unknown: "I don't have that information in my records."
-    },
-    modifiers: ["•", "✓", "→"]
-  },
-  "humorous": {
-    responses: {
-      default: "Oh boy, here's the answer you didn't know you needed:",
-      unknown: "My circuits are drawing a blank on that one! 🤖"
-    },
-    modifiers: ["😂", "🤔", "🎭"]
-  }
-}
-
-async function handleRequest(request) {
-  // Only allow POST requests
-  if (request.method !== 'POST') {
-    return jsonResponse(405, { error: 'Method Not Allowed' })
-  }
-
-  try {
-    // Parse the request body
-    const contentType = request.headers.get('content-type') || ''
-    let data
-    
-    if (contentType.includes('application/json')) {
-      data = await request.json()
-    } else if (contentType.includes('application/x-www-form-urlencoded')) {
-      const formData = await request.formData()
-      data = Object.fromEntries(formData.entries())
-    } else {
-      return jsonResponse(415, { error: 'Unsupported Media Type' })
+// index.js
+export default {
+  async fetch(request, env) {
+    // Only allow POST requests
+    if (request.method !== 'POST') {
+      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+        status: 405,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
-    // Validate required fields
-    if (!data.content || !data.bio) {
-      return jsonResponse(400, {
-        error: 'Missing required fields',
-        required: ['content', 'bio']
-      })
-    }
-
-    // Process the request
-    const response = generateResponse(data)
-    
-    return jsonResponse(200, {
-      response: response,
-      details: {
-        personality: data.personality || 'default',
-        bio: data.bio,
-        prompt_used: data.prompt || null
+    try {
+      const data = await request.json();
+      
+      // Validate required fields
+      const requiredFields = ['rank_text', 'rank', 'avatar', 'user_name', 'max_xp', 'xp'];
+      for (const field of requiredFields) {
+        if (!data[field]) {
+          return new Response(JSON.stringify({ error: `Missing required field: ${field}` }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
       }
-    })
 
-  } catch (error) {
-    return jsonResponse(500, {
-      error: 'Internal Server Error',
-      message: error.message
-    })
-  }
-}
+      // Validate numeric fields
+      if (isNaN(data.rank) || isNaN(data.max_xp) || isNaN(data.xp)) {
+        return new Response(JSON.stringify({ error: 'Rank, max_xp, and xp must be numbers' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
 
-function generateResponse(data) {
-  // Determine personality
-  const personalityKey = data.personality?.toLowerCase() || 'friendly'
-  const personality = PERSONALITIES[personalityKey] || PERSONALITIES['friendly']
-  
-  // Apply bio context
-  const bioContext = `As ${data.bio}, I should respond accordingly. `
-  
-  // Process memories if provided
-  const memoryContext = data.memories ? `\nContext: ${limitTokens(data.memories, 500)}` : ''
-  
-  // Process the content
-  const content = data.content.toLowerCase().trim()
-  
-  // Check for special prompts
-  if (data.prompt) {
-    return handleSpecialPrompt(data.prompt, content, personality, bioContext)
-  }
-  
-  // Check knowledge base
-  const knowledgeResponse = searchKnowledgeBase(content)
-  if (knowledgeResponse) {
-    return formatResponse(knowledgeResponse, personality, bioContext)
-  }
-  
-  // Check for greetings
-  if (isGreeting(content)) {
-    return formatResponse(
-      randomChoice(KNOWLEDGE_BASE.general.greetings),
-      personality,
-      bioContext
-    )
-  }
-  
-  // Check for farewells
-  if (isFarewell(content)) {
-    return formatResponse(
-      randomChoice(KNOWLEDGE_BASE.general.farewells),
-      personality,
-      bioContext
-    )
-  }
-  
-  // Check for help requests
-  if (isHelpRequest(content)) {
-    return formatResponse(
-      randomChoice(KNOWLEDGE_BASE.general.help),
-      personality,
-      bioContext
-    )
-  }
-  
-  // Default unknown response
-  return formatResponse(personality.responses.unknown, personality, bioContext)
-}
+      // Validate XP values
+      if (parseInt(data.xp) > parseInt(data.max_xp)) {
+        return new Response(JSON.stringify({ error: 'xp cannot be greater than max_xp' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
 
-function handleSpecialPrompt(prompt, content, personality, bioContext) {
-  // Simple prompt handling - in a real implementation you'd expand this
-  if (prompt.toLowerCase().includes('haiku')) {
-    return formatResponse(generateHaiku(content), personality, bioContext)
-  }
-  
-  if (prompt.toLowerCase().includes('rhyme')) {
-    return formatResponse(generateRhyme(content), personality, bioContext)
-  }
-  
-  return formatResponse(
-    `${personality.responses.default} ${content}`,
-    personality,
-    bioContext
-  )
-}
+      // Set defaults
+      const avatar_border = data.avatar_border || '#FFFFFF';
+      const bar_placeholder = data.bar_placeholder ? `${data.bar_placeholder}80` : '#80808080';
+      const bar = data.bar || '#FFFFFF';
 
-function searchKnowledgeBase(query) {
-  // Check facts first
-  for (const [key, value] of Object.entries(KNOWLEDGE_BASE.facts)) {
-    if (query.includes(key)) {
-      return value
+      // Calculate percentage
+      const percentage = ((data.xp / data.max_xp) * 100).toFixed(2);
+
+      // Generate HTML for the card
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+    body { margin: 0; padding: 0; width: 900px; height: 300px; }
+    .card {
+      width: 100%; height: 100%;
+      background: linear-gradient(to bottom, #1a1a2e, #16213e);
+      display: flex; align-items: center;
+      font-family: 'Roboto', sans-serif; color: white;
+    }
+    .avatar-container { margin-left: 50px; }
+    .avatar {
+      width: 180px; height: 180px; border-radius: 50%;
+      border: 5px solid ${avatar_border}; object-fit: cover;
+    }
+    .user-info { margin-left: 40px; width: 600px; }
+    .username { font-size: 42px; font-weight: bold; margin-bottom: 10px; }
+    .rank { font-size: 28px; margin-bottom: 30px; opacity: 0.8; }
+    .xp-container { margin-bottom: 20px; }
+    .xp-text {
+      font-size: 24px; margin-bottom: 8px;
+      display: flex; justify-content: space-between;
+    }
+    .progress-bar {
+      height: 20px; width: 100%;
+      background-color: ${bar_placeholder};
+      border-radius: 10px; overflow: hidden;
+    }
+    .progress {
+      height: 100%; width: ${percentage}%;
+      background-color: ${bar}; border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="avatar-container">
+      <img class="avatar" src="${data.avatar}" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'" />
+    </div>
+    <div class="user-info">
+      <div class="username">${data.user_name}</div>
+      <div class="rank">${data.rank_text} #${data.rank}</div>
+      <div class="xp-container">
+        <div class="xp-text">
+          <span>${data.xp}/${data.max_xp} XP</span>
+          <span>${percentage}%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+      `;
+
+      // Call Popcat.xyz screenshot API
+      const popcatResponse = await fetch('https://api.popcat.xyz/screenshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: `data:text/html;charset=UTF-8,${encodeURIComponent(html)}`,
+          delay: 2,
+          width: 900,
+          height: 300
+        })
+      });
+
+      if (!popcatResponse.ok) {
+        throw new Error('Failed to generate image');
+      }
+
+      // Return the image with caching headers
+      return new Response(popcatResponse.body, {
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'public, max-age=86400' // 24 hours cache
+        }
+      });
+
+    } catch (error) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
   }
-  
-  // Check general responses
-  for (const [category, responses] of Object.entries(KNOWLEDGE_BASE.general)) {
-    if (query.includes(category)) {
-      return randomChoice(responses)
-    }
-  }
-  
-  return null
-}
-
-function formatResponse(response, personality, context) {
-  const modifier = randomChoice(personality.modifiers)
-  return `${context}${modifier} ${response} ${modifier}`
-}
-
-// Helper functions
-function jsonResponse(status, data) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json' }
-  })
-}
-
-function limitTokens(text, maxTokens) {
-  const words = text.split(/\s+/)
-  if (words.length <= maxTokens) return text
-  return words.slice(0, maxTokens).join(' ') + '...'
-}
-
-function randomChoice(array) {
-  return array[Math.floor(Math.random() * array.length)]
-}
-
-function isGreeting(text) {
-  return ['hello', 'hi', 'hey', 'greetings'].some(g => text.includes(g))
-}
-
-function isFarewell(text) {
-  return ['bye', 'goodbye', 'see you', 'farewell'].some(g => text.includes(g))
-}
-
-function isHelpRequest(text) {
-  return ['help', 'assist', 'support'].some(g => text.includes(g))
-}
-
-// Simple generative functions (would be expanded in a real implementation)
-function generateHaiku(topic) {
-  const lines = [
-    `About ${topic || 'life'}`,
-    'A simple three-line form',
-    'Seventeen syllables'
-  ]
-  return lines.join('\n')
-}
-
-function generateRhyme(word) {
-  const rhymes = {
-    'life': 'strife',
-    'you': 'blue',
-    'day': 'way',
-    'cat': 'hat',
-    'fun': 'sun'
-  }
-  const rhyme = rhymes[word.toLowerCase()] || '...actually, I can\'t rhyme that!'
-  return `You said "${word}", how about "${rhyme}"?`
-}
+};
