@@ -1,107 +1,110 @@
+// index.js
 export default {
   async fetch(request) {
-    // Block non-POST requests
-    if (request.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Only POST requests allowed" }), {
+    // Only allow POST requests
+    if (request.method !== 'POST') {
+      return new Response(JSON.stringify({ error: 'Only POST requests allowed' }), {
         status: 405,
-        headers: { "Content-Type": "application/json" }
+        headers: { 'Content-Type': 'application/json' }
       });
     }
 
     try {
-      // Parse input with validation
       const data = await request.json();
-      const required = ['rank_text', 'rank', 'avatar', 'user_name', 'max_xp', 'xp'];
-      for (const field of required) {
-        if (!data[field]) throw new Error(`Missing ${field}`);
+      
+      // Validate required fields
+      const requiredFields = ['rank_text', 'rank', 'avatar', 'user_name', 'max_xp', 'xp'];
+      for (const field of requiredFields) {
+        if (!data[field]) {
+          return new Response(JSON.stringify({ error: `Missing required field: ${field}` }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
       }
+
+      // Validate numeric fields
+      if (isNaN(data.rank) || isNaN(data.max_xp) || isNaN(data.xp)) {
+        return new Response(JSON.stringify({ error: 'Rank, max_xp, and xp must be numbers' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Validate XP values
+      if (Number(data.xp) > Number(data.max_xp)) {
+        return new Response(JSON.stringify({ error: 'xp cannot be greater than max_xp' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Set defaults
+      const avatarBorder = data.avatar_border || '#FFFFFF';
+      const barPlaceholder = data.bar_placeholder ? `${data.bar_placeholder}80` : '#80808080';
+      const barColor = data.bar || '#FFFFFF';
 
       // Calculate percentage
       const percentage = ((data.xp / data.max_xp) * 100).toFixed(2);
-      
-      // Mobile-optimized HTML template
-      const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    body {
-      margin: 0;
-      width: 900px;
-      height: 300px;
-      background: linear-gradient(#1a1a2e, #16213e);
-      display: flex;
-      align-items: center;
-      font-family: Arial, sans-serif;
-      color: white;
-    }
-    .avatar {
-      width: 180px;
-      height: 180px;
-      border-radius: 50%;
-      border: 5px solid ${data.avatar_border || "#FFFFFF"};
-      margin-left: 50px;
-      object-fit: cover;
-    }
-    .user-info {
-      margin-left: 40px;
-    }
-    .username {
-      font-size: 42px;
-      font-weight: bold;
-      margin-bottom: 10px;
-    }
-    .progress-container {
-      margin-top: 20px;
-    }
-    .progress-bar {
-      height: 20px;
-      width: 100%;
-      background-color: ${data.bar_placeholder || "#80808080"};
-      border-radius: 10px;
-      overflow: hidden;
-    }
-    .progress {
-      height: 100%;
-      width: ${percentage}%;
-      background-color: ${data.bar || "#FFFFFF"};
-    }
-  </style>
-</head>
-<body>
-  <img class="avatar" src="${data.avatar}" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
-  <div class="user-info">
-    <div class="username">${data.user_name}</div>
-    <div style="font-size: 28px; opacity: 0.8">${data.rank_text} #${data.rank}</div>
-    <div class="progress-container">
-      <div style="font-size: 24px; margin-bottom: 8px">
-        ${data.xp}/${data.max_xp} XP • ${percentage}%
-      </div>
-      <div class="progress-bar">
-        <div class="progress"></div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
 
-      // Convert to image using Cloudflare's built-in HTMLRewriter
-      return new Response(html, {
+      // Generate SVG image directly (no external API needed)
+      const svg = `
+<svg width="900" height="300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="url(#bg)"/>
+  
+  <!-- Avatar -->
+  <defs>
+    <clipPath id="avatarClip">
+      <circle cx="230" cy="150" r="90"/>
+    </clipPath>
+  </defs>
+  <image href="${data.avatar}" x="140" y="60" width="180" height="180" 
+         clip-path="url(#avatarClip)" onerror="this.remove()"/>
+  <circle cx="230" cy="150" r="90" fill="none" stroke="${avatarBorder}" stroke-width="5"/>
+  
+  <!-- User Info -->
+  <text x="350" y="120" font-family="Arial" font-weight="bold" font-size="42" fill="white">
+    ${data.user_name}
+  </text>
+  <text x="350" y="160" font-family="Arial" font-size="28" fill="white" fill-opacity="0.8">
+    ${data.rank_text} #${data.rank}
+  </text>
+  
+  <!-- XP Bar -->
+  <text x="350" y="200" font-family="Arial" font-size="24" fill="white">
+    ${data.xp}/${data.max_xp} XP
+  </text>
+  <text x="750" y="200" font-family="Arial" font-size="24" fill="white" text-anchor="end">
+    ${percentage}%
+  </text>
+  
+  <rect x="350" y="210" width="400" height="20" rx="10" fill="${barPlaceholder}"/>
+  <rect x="350" y="210" width="${400 * (data.xp/data.max_xp)}" height="20" rx="10" fill="${barColor}"/>
+</svg>`;
+
+      // Return as SVG (browsers can display directly)
+      return new Response(svg, {
         headers: {
-          "Content-Type": "text/html",
-          "Cache-Control": "public, max-age=86400"
+          'Content-Type': 'image/svg+xml',
+          'Cache-Control': 'public, max-age=86400'
         }
       });
 
-    } catch (err) {
-      // Better error response
+    } catch (error) {
       return new Response(JSON.stringify({ 
-        error: "Image generation failed",
-        details: err.message 
-      }), { 
+        error: 'Image generation failed',
+        details: error.message 
+      }), {
         status: 500,
-        headers: { "Content-Type": "application/json" }
+        headers: { 'Content-Type': 'application/json' }
       });
     }
   }
